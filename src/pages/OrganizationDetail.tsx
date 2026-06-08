@@ -1,29 +1,43 @@
-import { useParams, useNavigate, Link } from 'react-router-dom'
-import { useForm } from 'react-hook-form'
+import { useState } from 'react'
+import { Link, useSearchParams } from 'react-router-dom'
+import { useForm, Controller } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
-import {
-  ArrowLeft,
-  Building2,
-  CheckCircle2,
-  Clock,
-  Loader2,
-  Mail,
-  Plus,
-  UserX,
-  XCircle,
-} from 'lucide-react'
+import { Building2, ChevronRight, Loader2, Plus, Users } from 'lucide-react'
 import { useMutation, useQueryClient } from '@tanstack/react-query'
 import { supabase } from '@/lib/supabase'
 import { useAuth } from '@/hooks/useAuth'
-import { useOrganization, useOrganizationMembers, orgKeys } from '@/hooks/useOrganizations'
-import { inviteMemberSchema, type InviteMemberInput } from '@/lib/schemas'
+import { useOrganizations, orgKeys } from '@/hooks/useOrganizations'
+import { createOrgSchema, type CreateOrgInput } from '@/lib/schemas'
 import { toast } from '@/hooks/useToast'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
+import { Textarea } from '@/components/ui/textarea'
 import { Badge } from '@/components/ui/badge'
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
-import type { MemberStatus, OrgType } from '@/types/database'
+import { Card, CardContent } from '@/components/ui/card'
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog'
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select'
+import type { OrgType } from '@/types/database'
+
+const ORG_TYPES: { value: OrgType; label: string; description: string }[] = [
+  { value: 'school', label: 'School', description: 'Educational institution' },
+  { value: 'nonprofit', label: 'Nonprofit', description: '501(c) tax-exempt organization' },
+  { value: 'business', label: 'Business', description: 'For-profit company' },
+  { value: 'government', label: 'Government', description: 'Public sector agency' },
+  { value: 'healthcare', label: 'Healthcare', description: 'Medical or health services' },
+]
 
 const ORG_TYPE_LABELS: Record<OrgType, string> = {
   school: 'School',
@@ -33,279 +47,241 @@ const ORG_TYPE_LABELS: Record<OrgType, string> = {
   healthcare: 'Healthcare',
 }
 
-const STATUS_CONFIG: Record<
-  MemberStatus,
-  { label: string; icon: React.ElementType; variant: MemberStatus }
-> = {
-  invited: { label: 'Invited', icon: Clock, variant: 'invited' },
-  active: { label: 'Active', icon: CheckCircle2, variant: 'active' },
-  declined: { label: 'Declined', icon: XCircle, variant: 'declined' },
-}
-
-function TypeSpecificField({ org }: { org: { type: OrgType; school_district?: string | null; nonprofit_ein?: string | null; business_registration?: string | null; government_jurisdiction?: string | null; healthcare_license?: string | null } }) {
-  if (org.type === 'school' && org.school_district) {
-    return (
-      <div className="text-sm">
-        <span className="text-muted-foreground">District: </span>
-        <span className="font-medium">{org.school_district}</span>
-      </div>
-    )
-  }
-  if (org.type === 'nonprofit' && org.nonprofit_ein) {
-    return (
-      <div className="text-sm">
-        <span className="text-muted-foreground">EIN: </span>
-        <span className="font-medium font-mono">{org.nonprofit_ein}</span>
-      </div>
-    )
-  }
-  if (org.type === 'business' && org.business_registration) {
-    return (
-      <div className="text-sm">
-        <span className="text-muted-foreground">Reg #: </span>
-        <span className="font-medium">{org.business_registration}</span>
-      </div>
-    )
-  }
-  if (org.type === 'government' && org.government_jurisdiction) {
-    return (
-      <div className="text-sm">
-        <span className="text-muted-foreground">Jurisdiction: </span>
-        <span className="font-medium">{org.government_jurisdiction}</span>
-      </div>
-    )
-  }
-  if (org.type === 'healthcare' && org.healthcare_license) {
-    return (
-      <div className="text-sm">
-        <span className="text-muted-foreground">License #: </span>
-        <span className="font-medium">{org.healthcare_license}</span>
-      </div>
-    )
-  }
-  return null
-}
-
-export function OrganizationDetailPage() {
-  const { id } = useParams<{ id: string }>()
-  const navigate = useNavigate()
+function CreateOrgDialog({
+  open,
+  onOpenChange,
+}: {
+  open: boolean
+  onOpenChange: (open: boolean) => void
+}) {
   const { user } = useAuth()
   const qc = useQueryClient()
-
-  const { data: org, isLoading: orgLoading } = useOrganization(id!)
-  const { data: members, isLoading: membersLoading } = useOrganizationMembers(id!)
 
   const {
     register,
     handleSubmit,
+    control,
+    watch,
     reset,
     formState: { errors },
-  } = useForm<InviteMemberInput>({
-    resolver: zodResolver(inviteMemberSchema),
-    defaultValues: { role: 'member' },
+  } = useForm<CreateOrgInput>({
+    resolver: zodResolver(createOrgSchema),
   })
 
-  const inviteMutation = useMutation({
-    mutationFn: async (data: InviteMemberInput) => {
-      // Call the Edge Function for server-side validation + creation
-      const { data: result, error } = await supabase.functions.invoke('create-invitation', {
-        body: {
-          organization_id: id,
-          email: data.email,
-          role: data.role,
-        },
-      })
+  const selectedType = watch('type')
+
+  const mutation = useMutation({
+    mutationFn: async (data: CreateOrgInput) => {
+      const { error } = await supabase.from('organizations').insert({
+        name: data.name,
+        type: data.type,
+        description: data.description ?? null,
+        created_by: user!.id,
+        school_district: data.school_district ?? null,
+        nonprofit_ein: data.nonprofit_ein ?? null,
+        business_registration: data.business_registration ?? null,
+        government_jurisdiction: data.government_jurisdiction ?? null,
+        healthcare_license: data.healthcare_license ?? null,
+      } as never)
       if (error) throw error
-      if (result?.error) throw new Error(result.error)
-      return result
     },
     onSuccess: () => {
-      qc.invalidateQueries({ queryKey: orgKeys.members(id!) })
       qc.invalidateQueries({ queryKey: orgKeys.lists() })
-      toast({ title: 'Invitation sent', description: 'Member has been added to the list.' })
+      toast({ title: 'Organization created', description: 'Your new organization is ready.' })
       reset()
+      onOpenChange(false)
     },
     onError: (err) => {
       toast({
         variant: 'destructive',
-        title: 'Invitation failed',
+        title: 'Failed to create organization',
         description: err instanceof Error ? err.message : 'Something went wrong.',
       })
     },
   })
 
-  if (orgLoading) {
-    return (
-      <div className="flex h-64 items-center justify-center">
-        <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
-      </div>
-    )
-  }
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent className="sm:max-w-lg">
+        <DialogHeader>
+          <DialogTitle>Create Organization</DialogTitle>
+          <DialogDescription>
+            Fill in the details below. Some fields depend on organization type.
+          </DialogDescription>
+        </DialogHeader>
 
-  if (!org) {
-    return (
-      <div className="flex h-64 flex-col items-center justify-center gap-3">
-        <p className="text-muted-foreground">Organization not found.</p>
-        <Button variant="outline" onClick={() => navigate('/organizations')}>
-          Back to organizations
-        </Button>
-      </div>
-    )
-  }
+        <form
+          onSubmit={handleSubmit((data) => mutation.mutate(data))}
+          className="space-y-4"
+          noValidate
+        >
+          <div className="space-y-1.5">
+            <Label htmlFor="name">Organization name *</Label>
+            <Input id="name" placeholder="Acme Corp" {...register('name')} />
+            {errors.name && <p className="text-xs text-destructive">{errors.name.message}</p>}
+          </div>
 
-  const activeCount = members?.filter((m) => m.status === 'active').length ?? 0
-  const invitedCount = members?.filter((m) => m.status === 'invited').length ?? 0
+          <div className="space-y-1.5">
+            <Label>Type *</Label>
+            <Controller
+              name="type"
+              control={control}
+              render={({ field }) => (
+                <Select onValueChange={field.onChange} value={field.value}>
+                  <SelectTrigger>
+                    <SelectValue placeholder="Select organization type" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {ORG_TYPES.map((t) => (
+                      <SelectItem key={t.value} value={t.value}>
+                        <span className="font-medium">{t.label}</span>
+                        <span className="text-muted-foreground ml-2 text-xs">{t.description}</span>
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              )}
+            />
+            {errors.type && <p className="text-xs text-destructive">{errors.type.message}</p>}
+          </div>
+
+          {selectedType === 'school' && (
+            <div className="space-y-1.5 rounded-lg border border-blue-200 bg-blue-50/50 p-3 dark:border-blue-900 dark:bg-blue-950/20">
+              <Label htmlFor="school_district">School District *</Label>
+              <Input id="school_district" placeholder="e.g. Los Angeles Unified" {...register('school_district')} />
+              {errors.school_district && <p className="text-xs text-destructive">{errors.school_district.message}</p>}
+            </div>
+          )}
+
+          {selectedType === 'nonprofit' && (
+            <div className="space-y-1.5 rounded-lg border border-green-200 bg-green-50/50 p-3 dark:border-green-900 dark:bg-green-950/20">
+              <Label htmlFor="nonprofit_ein">EIN (Tax ID) *</Label>
+              <Input id="nonprofit_ein" placeholder="XX-XXXXXXX" {...register('nonprofit_ein')} />
+              {errors.nonprofit_ein && <p className="text-xs text-destructive">{errors.nonprofit_ein.message}</p>}
+            </div>
+          )}
+
+          {selectedType === 'business' && (
+            <div className="space-y-1.5 rounded-lg border border-purple-200 bg-purple-50/50 p-3 dark:border-purple-900 dark:bg-purple-950/20">
+              <Label htmlFor="business_registration">Business Registration #</Label>
+              <Input id="business_registration" placeholder="e.g. C4123456" {...register('business_registration')} />
+            </div>
+          )}
+
+          {selectedType === 'government' && (
+            <div className="space-y-1.5 rounded-lg border border-orange-200 bg-orange-50/50 p-3 dark:border-orange-900 dark:bg-orange-950/20">
+              <Label htmlFor="government_jurisdiction">Jurisdiction</Label>
+              <Input id="government_jurisdiction" placeholder="e.g. City of Austin, TX" {...register('government_jurisdiction')} />
+            </div>
+          )}
+
+          {selectedType === 'healthcare' && (
+            <div className="space-y-1.5 rounded-lg border border-red-200 bg-red-50/50 p-3 dark:border-red-900 dark:bg-red-950/20">
+              <Label htmlFor="healthcare_license">Healthcare License #</Label>
+              <Input id="healthcare_license" placeholder="e.g. HL-123456" {...register('healthcare_license')} />
+            </div>
+          )}
+
+          <div className="space-y-1.5">
+            <Label htmlFor="description">Description</Label>
+            <Textarea id="description" placeholder="Brief description (optional)" rows={2} {...register('description')} />
+            {errors.description && <p className="text-xs text-destructive">{errors.description.message}</p>}
+          </div>
+
+          <div className="flex justify-end gap-2 pt-2">
+            <Button type="button" variant="outline" onClick={() => onOpenChange(false)}>Cancel</Button>
+            <Button type="submit" disabled={mutation.isPending}>
+              {mutation.isPending && <Loader2 className="animate-spin" />}
+              Create organization
+            </Button>
+          </div>
+        </form>
+      </DialogContent>
+    </Dialog>
+  )
+}
+
+export function OrganizationsPage() {
+  const [searchParams] = useSearchParams()
+  const [dialogOpen, setDialogOpen] = useState(searchParams.get('new') === '1')
+  const { data: orgs, isLoading, error } = useOrganizations()
 
   return (
     <div className="space-y-6 animate-fade-in">
-      {/* Back nav */}
-      <div>
-        <Button variant="ghost" size="sm" className="-ml-2 gap-2 text-muted-foreground" asChild>
-          <Link to="/organizations">
-            <ArrowLeft className="h-4 w-4" />
-            All organizations
-          </Link>
+      <div className="flex items-center justify-between">
+        <div>
+          <h1 className="font-display text-3xl font-bold tracking-tight">Organizations</h1>
+          <p className="mt-1 text-muted-foreground">
+            {orgs?.length ?? 0} organization{orgs?.length !== 1 ? 's' : ''} managed by you
+          </p>
+        </div>
+        <Button onClick={() => setDialogOpen(true)}>
+          <Plus className="h-4 w-4" />
+          New organization
         </Button>
       </div>
 
-      {/* Org header */}
-      <div className="flex items-start gap-4">
-        <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-primary/10">
-          <Building2 className="h-6 w-6 text-primary" />
+      <CreateOrgDialog open={dialogOpen} onOpenChange={setDialogOpen} />
+
+      {isLoading ? (
+        <div className="space-y-3">
+          {[1, 2, 3, 4].map((i) => (
+            <div key={i} className="h-20 rounded-xl bg-muted animate-pulse" />
+          ))}
         </div>
-        <div className="flex-1">
-          <div className="flex items-center gap-3 flex-wrap">
-            <h1 className="font-display text-3xl font-bold tracking-tight">{org.name}</h1>
-            <Badge variant={org.type as OrgType}>{ORG_TYPE_LABELS[org.type]}</Badge>
-          </div>
-          {org.description && (
-            <p className="mt-1 text-muted-foreground text-sm">{org.description}</p>
-          )}
-          <TypeSpecificField org={org} />
-          <p className="text-xs text-muted-foreground mt-1">
-            Created {new Date(org.created_at).toLocaleDateString()}
-          </p>
-        </div>
-      </div>
-
-      {/* Stats row */}
-      <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
-        <Card>
-          <CardContent className="py-4">
-            <p className="text-xs text-muted-foreground">Total Members</p>
-            <p className="font-display text-2xl font-bold mt-0.5">{members?.length ?? 0}</p>
+      ) : error ? (
+        <Card className="border-destructive/50">
+          <CardContent className="py-8 text-center text-sm text-destructive">
+            Failed to load organizations. Please refresh the page.
           </CardContent>
         </Card>
-        <Card>
-          <CardContent className="py-4">
-            <p className="text-xs text-muted-foreground">Active</p>
-            <p className="font-display text-2xl font-bold mt-0.5 text-emerald-600">{activeCount}</p>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardContent className="py-4">
-            <p className="text-xs text-muted-foreground">Pending</p>
-            <p className="font-display text-2xl font-bold mt-0.5 text-yellow-600">{invitedCount}</p>
-          </CardContent>
-        </Card>
-      </div>
-
-      <div className="grid gap-6 lg:grid-cols-3">
-        {/* Members list */}
-        <div className="lg:col-span-2 space-y-4">
-          <h2 className="font-display text-xl font-semibold">Members</h2>
-
-          {membersLoading ? (
-            <div className="space-y-2">
-              {[1, 2, 3].map((i) => (
-                <div key={i} className="h-14 rounded-lg bg-muted animate-pulse" />
-              ))}
+      ) : orgs?.length === 0 ? (
+        <Card className="border-dashed">
+          <CardContent className="flex flex-col items-center gap-3 py-16">
+            <Building2 className="h-12 w-12 text-muted-foreground/40" />
+            <div className="text-center">
+              <p className="font-semibold">No organizations yet</p>
+              <p className="text-sm text-muted-foreground mt-1">Create your first organization to get started.</p>
             </div>
-          ) : members?.length === 0 ? (
-            <Card className="border-dashed">
-              <CardContent className="flex flex-col items-center gap-2 py-10">
-                <UserX className="h-8 w-8 text-muted-foreground/40" />
-                <p className="text-sm text-muted-foreground">No members yet. Invite someone!</p>
-              </CardContent>
-            </Card>
-          ) : (
-            <Card>
-              <div className="divide-y">
-                {members?.map((member) => {
-                  const status = STATUS_CONFIG[member.status]
-                  const StatusIcon = status.icon
-                  return (
-                    <div key={member.id} className="flex items-center gap-3 px-4 py-3">
-                      <div className="flex h-8 w-8 items-center justify-center rounded-full bg-muted text-xs font-semibold uppercase">
-                        {member.email[0]}
-                      </div>
-                      <div className="flex-1 min-w-0">
-                        <p className="text-sm font-medium truncate">{member.email}</p>
-                        <p className="text-xs text-muted-foreground capitalize">{member.role}</p>
-                      </div>
-                      <Badge variant={status.variant}>
-                        <StatusIcon className="mr-1 h-3 w-3" />
-                        {status.label}
+            <Button onClick={() => setDialogOpen(true)}>
+              <Plus className="h-4 w-4" />
+              Create organization
+            </Button>
+          </CardContent>
+        </Card>
+      ) : (
+        <div className="space-y-3">
+          {orgs?.map((org) => (
+            <Link key={org.id} to={`/organizations/${org.id}`}>
+              <Card className="group transition-all hover:shadow-md hover:border-primary/30 cursor-pointer">
+                <CardContent className="flex items-center gap-4 py-4">
+                  <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-primary/10">
+                    <Building2 className="h-5 w-5 text-primary" />
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center gap-2">
+                      <p className="font-semibold truncate">{org.name}</p>
+                      <Badge variant={org.type as OrgType} className="shrink-0">
+                        {ORG_TYPE_LABELS[org.type]}
                       </Badge>
                     </div>
-                  )
-                })}
-              </div>
-            </Card>
-          )}
-        </div>
-
-        {/* Invite form */}
-        <div className="space-y-4">
-          <h2 className="font-display text-xl font-semibold">Invite Member</h2>
-          <Card>
-            <CardHeader className="pb-3">
-              <CardTitle className="text-base">Send invitation</CardTitle>
-              <CardDescription>
-                The member will appear in the list immediately. Email delivery would be
-                triggered here in production.
-              </CardDescription>
-            </CardHeader>
-            <CardContent>
-              <form
-                onSubmit={handleSubmit((data) => inviteMutation.mutate(data))}
-                className="space-y-3"
-                noValidate
-              >
-                <div className="space-y-1.5">
-                  <Label htmlFor="invite-email">Email address</Label>
-                  <div className="relative">
-                    <Mail className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-                    <Input
-                      id="invite-email"
-                      type="email"
-                      placeholder="member@example.com"
-                      className="pl-9"
-                      {...register('email')}
-                    />
+                    <div className="flex items-center gap-3 mt-0.5">
+                      <span className="flex items-center gap-1 text-xs text-muted-foreground">
+                        <Users className="h-3 w-3" />
+                        {org.member_count} member{org.member_count !== 1 ? 's' : ''}
+                      </span>
+                      <span className="text-xs text-muted-foreground">
+                        Created {new Date(org.created_at).toLocaleDateString()}
+                      </span>
+                    </div>
                   </div>
-                  {errors.email && (
-                    <p className="text-xs text-destructive">{errors.email.message}</p>
-                  )}
-                </div>
-
-                <Button
-                  type="submit"
-                  className="w-full"
-                  disabled={inviteMutation.isPending}
-                >
-                  {inviteMutation.isPending ? (
-                    <Loader2 className="animate-spin" />
-                  ) : (
-                    <Plus className="h-4 w-4" />
-                  )}
-                  Send invitation
-                </Button>
-              </form>
-            </CardContent>
-          </Card>
+                  <ChevronRight className="h-4 w-4 text-muted-foreground/50 group-hover:text-foreground transition-colors shrink-0" />
+                </CardContent>
+              </Card>
+            </Link>
+          ))}
         </div>
-      </div>
+      )}
     </div>
   )
 }

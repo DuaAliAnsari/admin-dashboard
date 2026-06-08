@@ -21,7 +21,6 @@ import {
   DialogDescription,
   DialogHeader,
   DialogTitle,
-  DialogTrigger,
 } from '@/components/ui/dialog'
 import {
   Select,
@@ -83,7 +82,7 @@ function CreateOrgDialog({
         business_registration: data.business_registration ?? null,
         government_jurisdiction: data.government_jurisdiction ?? null,
         healthcare_license: data.healthcare_license ?? null,
-      })
+      } as never)
       if (error) throw error
     },
     onSuccess: () => {
@@ -116,14 +115,12 @@ function CreateOrgDialog({
           className="space-y-4"
           noValidate
         >
-          {/* Name */}
           <div className="space-y-1.5">
             <Label htmlFor="name">Organization name *</Label>
             <Input id="name" placeholder="Acme Corp" {...register('name')} />
             {errors.name && <p className="text-xs text-destructive">{errors.name.message}</p>}
           </div>
 
-          {/* Type */}
           <div className="space-y-1.5">
             <Label>Type *</Label>
             <Controller
@@ -137,12 +134,8 @@ function CreateOrgDialog({
                   <SelectContent>
                     {ORG_TYPES.map((t) => (
                       <SelectItem key={t.value} value={t.value}>
-                        <div>
-                          <span className="font-medium">{t.label}</span>
-                          <span className="text-muted-foreground ml-2 text-xs">
-                            {t.description}
-                          </span>
-                        </div>
+                        <span className="font-medium">{t.label}</span>
+                        <span className="text-muted-foreground ml-2 text-xs">{t.description}</span>
                       </SelectItem>
                     ))}
                   </SelectContent>
@@ -152,86 +145,51 @@ function CreateOrgDialog({
             {errors.type && <p className="text-xs text-destructive">{errors.type.message}</p>}
           </div>
 
-          {/* Conditional type-specific fields */}
           {selectedType === 'school' && (
             <div className="space-y-1.5 rounded-lg border border-blue-200 bg-blue-50/50 p-3 dark:border-blue-900 dark:bg-blue-950/20">
               <Label htmlFor="school_district">School District *</Label>
-              <Input
-                id="school_district"
-                placeholder="e.g. Los Angeles Unified School District"
-                {...register('school_district')}
-              />
-              {errors.school_district && (
-                <p className="text-xs text-destructive">{errors.school_district.message}</p>
-              )}
+              <Input id="school_district" placeholder="e.g. Los Angeles Unified" {...register('school_district')} />
+              {errors.school_district && <p className="text-xs text-destructive">{errors.school_district.message}</p>}
             </div>
           )}
 
           {selectedType === 'nonprofit' && (
             <div className="space-y-1.5 rounded-lg border border-green-200 bg-green-50/50 p-3 dark:border-green-900 dark:bg-green-950/20">
               <Label htmlFor="nonprofit_ein">EIN (Tax ID) *</Label>
-              <Input
-                id="nonprofit_ein"
-                placeholder="XX-XXXXXXX"
-                {...register('nonprofit_ein')}
-              />
-              {errors.nonprofit_ein && (
-                <p className="text-xs text-destructive">{errors.nonprofit_ein.message}</p>
-              )}
+              <Input id="nonprofit_ein" placeholder="XX-XXXXXXX" {...register('nonprofit_ein')} />
+              {errors.nonprofit_ein && <p className="text-xs text-destructive">{errors.nonprofit_ein.message}</p>}
             </div>
           )}
 
           {selectedType === 'business' && (
             <div className="space-y-1.5 rounded-lg border border-purple-200 bg-purple-50/50 p-3 dark:border-purple-900 dark:bg-purple-950/20">
               <Label htmlFor="business_registration">Business Registration #</Label>
-              <Input
-                id="business_registration"
-                placeholder="e.g. C4123456"
-                {...register('business_registration')}
-              />
+              <Input id="business_registration" placeholder="e.g. C4123456" {...register('business_registration')} />
             </div>
           )}
 
           {selectedType === 'government' && (
             <div className="space-y-1.5 rounded-lg border border-orange-200 bg-orange-50/50 p-3 dark:border-orange-900 dark:bg-orange-950/20">
               <Label htmlFor="government_jurisdiction">Jurisdiction</Label>
-              <Input
-                id="government_jurisdiction"
-                placeholder="e.g. City of Austin, TX"
-                {...register('government_jurisdiction')}
-              />
+              <Input id="government_jurisdiction" placeholder="e.g. City of Austin, TX" {...register('government_jurisdiction')} />
             </div>
           )}
 
           {selectedType === 'healthcare' && (
             <div className="space-y-1.5 rounded-lg border border-red-200 bg-red-50/50 p-3 dark:border-red-900 dark:bg-red-950/20">
               <Label htmlFor="healthcare_license">Healthcare License #</Label>
-              <Input
-                id="healthcare_license"
-                placeholder="e.g. HL-123456"
-                {...register('healthcare_license')}
-              />
+              <Input id="healthcare_license" placeholder="e.g. HL-123456" {...register('healthcare_license')} />
             </div>
           )}
 
-          {/* Description */}
           <div className="space-y-1.5">
             <Label htmlFor="description">Description</Label>
-            <Textarea
-              id="description"
-              placeholder="Brief description (optional)"
-              rows={2}
-              {...register('description')}
-            />
-            {errors.description && (
-              <p className="text-xs text-destructive">{errors.description.message}</p>
-            )}
+            <Textarea id="description" placeholder="Brief description (optional)" rows={2} {...register('description')} />
+            {errors.description && <p className="text-xs text-destructive">{errors.description.message}</p>}
           </div>
 
           <div className="flex justify-end gap-2 pt-2">
-            <Button type="button" variant="outline" onClick={() => onOpenChange(false)}>
-              Cancel
-            </Button>
+            <Button type="button" variant="outline" onClick={() => onOpenChange(false)}>Cancel</Button>
             <Button type="submit" disabled={mutation.isPending}>
               {mutation.isPending && <Loader2 className="animate-spin" />}
               Create organization
@@ -250,7 +208,6 @@ export function OrganizationsPage() {
 
   return (
     <div className="space-y-6 animate-fade-in">
-      {/* Header */}
       <div className="flex items-center justify-between">
         <div>
           <h1 className="font-display text-3xl font-bold tracking-tight">Organizations</h1>
@@ -266,7 +223,6 @@ export function OrganizationsPage() {
 
       <CreateOrgDialog open={dialogOpen} onOpenChange={setDialogOpen} />
 
-      {/* List */}
       {isLoading ? (
         <div className="space-y-3">
           {[1, 2, 3, 4].map((i) => (
@@ -285,9 +241,7 @@ export function OrganizationsPage() {
             <Building2 className="h-12 w-12 text-muted-foreground/40" />
             <div className="text-center">
               <p className="font-semibold">No organizations yet</p>
-              <p className="text-sm text-muted-foreground mt-1">
-                Create your first organization to get started.
-              </p>
+              <p className="text-sm text-muted-foreground mt-1">Create your first organization to get started.</p>
             </div>
             <Button onClick={() => setDialogOpen(true)}>
               <Plus className="h-4 w-4" />
@@ -304,7 +258,6 @@ export function OrganizationsPage() {
                   <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-primary/10">
                     <Building2 className="h-5 w-5 text-primary" />
                   </div>
-
                   <div className="flex-1 min-w-0">
                     <div className="flex items-center gap-2">
                       <p className="font-semibold truncate">{org.name}</p>
@@ -322,7 +275,6 @@ export function OrganizationsPage() {
                       </span>
                     </div>
                   </div>
-
                   <ChevronRight className="h-4 w-4 text-muted-foreground/50 group-hover:text-foreground transition-colors shrink-0" />
                 </CardContent>
               </Card>

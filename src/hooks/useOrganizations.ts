@@ -1,6 +1,6 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { supabase } from '@/lib/supabase'
-import type { Organization, OrganizationWithCount } from '@/types/database'
+import type { Organization, OrganizationMember, OrganizationWithCount } from '@/types/database'
 
 export const orgKeys = {
   all: ['organizations'] as const,
@@ -15,19 +15,22 @@ export function useOrganizations() {
     queryFn: async (): Promise<OrganizationWithCount[]> => {
       const { data, error } = await supabase
         .from('organizations')
-        .select(`
-          *,
-          member_count:organization_members(count)
-        `)
+        .select('*')
         .order('created_at', { ascending: false })
 
       if (error) throw error
 
-      // Flatten the count from PostgREST aggregate
-      return (data ?? []).map((row) => ({
-        ...row,
-        member_count: (row.member_count as unknown as { count: number }[])[0]?.count ?? 0,
-      }))
+      // Fetch member counts separately to avoid type issues with aggregates
+      const orgsWithCounts = await Promise.all(
+        (data ?? []).map(async (org) => {
+          const { count } = await supabase
+            .from('organization_members')
+            .select('*', { count: 'exact', head: true })
+            .eq('organization_id', org.id)
+          return { ...(org as unknown as Organization), member_count: count ?? 0 }
+        })
+      )
+      return orgsWithCounts
     },
   })
 }
@@ -43,7 +46,7 @@ export function useOrganization(id: string) {
         .single()
 
       if (error) throw error
-      return data
+      return data as unknown as Organization
     },
     enabled: !!id,
   })
@@ -52,7 +55,7 @@ export function useOrganization(id: string) {
 export function useOrganizationMembers(orgId: string) {
   return useQuery({
     queryKey: orgKeys.members(orgId),
-    queryFn: async () => {
+    queryFn: async (): Promise<OrganizationMember[]> => {
       const { data, error } = await supabase
         .from('organization_members')
         .select('*')
@@ -60,7 +63,7 @@ export function useOrganizationMembers(orgId: string) {
         .order('invited_at', { ascending: false })
 
       if (error) throw error
-      return data ?? []
+      return (data ?? []) as unknown as OrganizationMember[]
     },
     enabled: !!orgId,
   })
